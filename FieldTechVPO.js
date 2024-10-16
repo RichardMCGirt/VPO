@@ -90,10 +90,7 @@ searchBar.addEventListener('input', filterTable);
         }
     }
 
-        // Function to update loading bar progress
-        function updateLoadingBar(progressPercentage) {
-            loadingBar.style.width = `${progressPercentage}%`; // Update the width of the loading bar
-        }
+     
 
             // Function to display a message when user interacts with the dropdown during loading
     function showLoadingMessage() {
@@ -103,23 +100,26 @@ searchBar.addEventListener('input', filterTable);
     }
        // Add a listener to prevent dropdown interaction during loading
        techDropdown.addEventListener('click', showLoadingMessage);
-    // Update the loading bar based on progress
-    function updateLoadingBar(current, total) {
-        const loadingBar = document.getElementById('loadingBar');
-        const loadingPercentage = document.getElementById('loadingPercentage');
-    
-        const percentage = Math.min(Math.round((current / total) * 100), 100); // Calculate percentage
-        loadingBar.style.width = `${percentage}%`;  // Update bar width
-        loadingPercentage.innerText = `${percentage}%`;  // Update percentage text
-    
-        console.log(`Loading bar updated: ${percentage}% (${current} of ${total} records fetched).`);
-    }
-    
+// Function to update the loading bar progress and display "Loading X out of Y"
+function updateLoadingBar(current, total) {
+    const loadingBar = document.getElementById('loadingBar');
+    const loadingStatus = document.getElementById('loadingPercentage');
+
+    // Update the text to show "Loading X out of Y"
+    loadingStatus.innerText = `Loading ${current} out of ${total}`;
+
+    console.log(`Loading status updated: Loading ${current} out of ${total}.`);
+
+    // Optionally, update the bar width for a visual representation of progress
+    const percentage = Math.min(Math.round((current / total) * 100), 100); // Calculate percentage
+    loadingBar.style.width = `${percentage}%`;  // Update bar width
+}
+
     
   // Fetch and display records
 async function fetchAndDisplayRecords() {
     const recordsTableBody = document.querySelector('#records tbody');
-    
+
     if (!recordsTableBody) {
         console.error("Error: The #records tbody element does not exist in the DOM.");
         return;
@@ -129,10 +129,9 @@ async function fetchAndDisplayRecords() {
 
     try {
         console.log("Starting to fetch records from Airtable...");
-        
-        // Show the loading bar at the beginning of the process and reset progress
+
+        // Show the loading bar at the beginning of the process
         showLoadingBar();
-        updateLoadingBar(0, 100);  // Set to 0% initially
 
         // Disable the dropdown while records are loading
         techDropdown.disabled = true;
@@ -142,32 +141,61 @@ async function fetchAndDisplayRecords() {
         let records = [];
         let offset = '';
 
-        // First pass: Fetch all records to get the total count
-        console.log("Calculating total number of records...");
-        do {
-            const response = await axios.get(`${airtableEndpoint}?filterByFormula=AND(NOT({Field Tech Confirmed Job Complete}), {VPO Status} = 'Awaiting Field Tech Complete Confirmation')&offset=${offset}`);
-            const pageRecords = response.data.records;
-            totalRecords += pageRecords.length; // Count the total records
-            offset = response.data.offset || ''; // Move to the next page of results
-        } while (offset);
+        // Step 1: Fetch all records and calculate the total number of records at the same time
+        console.log("Fetching and calculating total number of records...");
+        
+        // First, we calculate the total number of records
+     // Step 1: Calculate total number of records
+do {
+    const response = await axios.get(`${airtableEndpoint}?filterByFormula=AND(NOT({Field Tech Confirmed Job Complete}), {VPO Status} = 'Awaiting Field Tech Complete Confirmation')&offset=${offset}`);
+    const pageRecords = response.data.records;
+    totalRecords += pageRecords.length;
+    records = records.concat(pageRecords);
 
-        // Second pass: Fetch records and update the percentage
-        offset = ''; // Reset offset to start fetching records again
-        fetchedRecords = 0; // Reset fetched records count
-        records = []; // Clear previously fetched records
+    offset = response.data.offset || ''; // Move to the next page of results
+} while (offset);
 
-        do {
-            const response = await axios.get(`${airtableEndpoint}?filterByFormula=AND(NOT({Field Tech Confirmed Job Complete}), {VPO Status} = 'Awaiting Field Tech Complete Confirmation')&offset=${offset}`);
-            const pageRecords = response.data.records;
-            records = records.concat(pageRecords);
-            fetchedRecords += pageRecords.length;
+console.log(`Total records to fetch: ${totalRecords}`);
 
-            // Update the loading bar
-            updateLoadingBar((fetchedRecords / totalRecords) * 100);
+// Step 2: Fetch and display records (batch if more than 50 records)
+if (totalRecords <= 50) {
+    // Fetch all records at once if less than or equal to 50
+    console.log(`Fetching all records at once (total: ${totalRecords})`);
 
-            offset = response.data.offset || ''; // Move to the next page of results
-            console.log(`Fetched ${fetchedRecords} records so far.`);
-        } while (offset);
+    // Display all records at once
+    displayRecordsWithFadeIn(records);
+    updateLoadingBar(totalRecords, totalRecords); // Set loading to 100% when done
+} else {
+    // Batch fetching for more than 50 records
+    console.log("Batch fetching records...");
+
+    let fetchedRecords = 0;
+    let offset = '';
+
+    do {
+        const response = await axios.get(`${airtableEndpoint}?filterByFormula=AND(NOT({Field Tech Confirmed Job Complete}), {VPO Status} = 'Awaiting Field Tech Complete Confirmation')&offset=${offset}`);
+        const pageRecords = response.data.records;
+        records = records.concat(pageRecords);
+        fetchedRecords += pageRecords.length;
+
+        // Update the loading bar and display the number of fetched records
+        updateLoadingBar(fetchedRecords, totalRecords);
+
+        // Add a delay before displaying the fetched records (batching for large sets)
+        await delayDisplay(1000); // Delay by 1000 milliseconds
+
+        // Display the fetched records so far in batches
+        displayRecordsWithFadeIn(pageRecords);
+
+        offset = response.data.offset || ''; // Move to the next page of results
+        console.log(`Fetched ${fetchedRecords} records so far.`);
+    } while (offset);
+}
+
+// Helper function to add delay
+function delayDisplay(milliseconds) {
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
 
         // Hide the loading bar once fetching is complete
         hideLoadingBar();
@@ -176,21 +204,6 @@ async function fetchAndDisplayRecords() {
         // Enable the dropdown after records have loaded
         techDropdown.disabled = false;
         techDropdown.removeEventListener('click', showLoadingMessage);
-
-        // Populate the table with the fetched records
-        console.log("Populating the table with fetched records...");
-        records.forEach(record => {
-            const recordRow = document.createElement('tr');
-            recordRow.innerHTML = `
-                <td>${record.fields['ID Number'] || ''}</td>
-                <td>${record.fields['static Vanir Office'] || ''}</td>
-                <td>${record.fields['Job Name'] || ''}</td>
-                <td>${record.fields['Description of Work'] || ''}</td>
-                <td>${record.fields['static Field Technician'] || ''}</td>
-                <td>${record.fields['Field Tech Confirmed Job Complete'] ? 'Yes' : 'No'}</td>
-            `;
-            recordsTableBody.appendChild(recordRow);
-        });
 
         console.log(`Total number of records displayed: ${records.length}`);
     } catch (error) {
@@ -202,6 +215,8 @@ async function fetchAndDisplayRecords() {
         techDropdown.removeEventListener('click', showLoadingMessage);
     }
 }
+
+
 
 // Call this function on page load
 document.addEventListener("DOMContentLoaded", async function () {
@@ -248,21 +263,25 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
     }
 
-    // Function to show loading bar
-    function showLoadingBar() {
-        loadingBarContainer.style.display = 'block';
-        loadingBar.style.width = '0%';
-    }
+// Function to show the loading bar and reset the status
+function showLoadingBar() {
+    const loadingBarContainer = document.getElementById('loadingBarContainer');
+    loadingBarContainer.style.display = 'block'; // Show the loading bar container
+    const loadingBar = document.getElementById('loadingBar');
+    loadingBar.style.width = '0%'; // Reset the loading bar width
+    const loadingStatus = document.getElementById('loadingPercentage');
+    loadingStatus.innerText = 'Loading 0 out of 0'; // Reset the text
+    console.log("Loading bar shown with initial text.");
+}
 
-    // Function to hide loading bar
-    function hideLoadingBar() {
-        loadingBarContainer.style.display = 'none';
-    }
+// Function to hide the loading bar
+function hideLoadingBar() {
+    const loadingBarContainer = document.getElementById('loadingBarContainer');
+    loadingBarContainer.style.display = 'none'; // Hide the loading bar container
+    console.log("Loading bar hidden.");
+}
 
-    // Function to update loading bar progress
-    function updateLoadingBar(progressPercentage) {
-        loadingBar.style.width = `${progressPercentage}%`;
-    }
+
 
     async function populateDropdown() {
         showLoadingBar();  // Show loading bar when dropdown starts populating
@@ -399,7 +418,6 @@ document.addEventListener("DOMContentLoaded", async function () {
 async function fetchRecordsForTech(fieldTech) {
     try {
         showLoadingBar(); // Show the loading bar
-        updateLoadingBar(0, 100); // Reset loading bar to 0%
 
         console.log(`Fetching records for ${fieldTech} from Airtable...`);
     
