@@ -132,7 +132,7 @@ tr:nth-child(odd) {
 /* Portrait mode */
 @media screen and (orientation: portrait) {
     .table-container {
-        max-height: 0vh; /* Use more vertical space */
+        max-height: 65vh; /* Use more vertical space */
         margin-bottom: 50px; /* Extra bottom margin */
     }
 
